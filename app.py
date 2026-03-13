@@ -1,67 +1,123 @@
 from flask import Flask, render_template, request, redirect, url_for, session
 from flask_wtf import CSRFProtect
+import boto3
 import os
 
 app = Flask(__name__)
 
-# 🔐 Secure secret key from environment variable
+# Secret key
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
 if not app.secret_key:
-    raise RuntimeError("FLASK_SECRET_KEY is not set")
+    raise RuntimeError("FLASK_SECRET_KEY not set")
 
-# 🔐 Enable CSRF protection
 csrf = CSRFProtect(app)
 
-# 🔐 Secure credentials from environment variables
-USERNAME = os.getenv("APP_USERNAME")
-PASSWORD = os.getenv("APP_PASSWORD")
+# DynamoDB connection
+dynamodb = boto3.resource(
+    "dynamodb",
+    region_name=os.getenv("AWS_REGION", "ap-southeast-1")
+)
 
-if not USERNAME or not PASSWORD:
-    raise RuntimeError("APP_USERNAME or APP_PASSWORD is not set")
+users_table = dynamodb.Table("UsersTable")
+sales_table = dynamodb.Table("SalesTable")
 
-# In-memory sales store
-sales_data = []
 
-# 🔹 ALB Health Check
+# =========================
+# Health check (ALB)
+# =========================
 @app.route("/")
 def health():
     return "RO Sales App is running", 200
 
-# 🔹 Login Page
-@app.route("/login", methods=["GET", "POST"])
-def login():
+
+# =========================
+# Register User
+# =========================
+@app.route("/register", methods=["GET", "POST"])
+def register():
+
     if request.method == "POST":
+
         username = request.form.get("username")
         password = request.form.get("password")
 
-        if username == USERNAME and password == PASSWORD:
+        # check if user already exists
+        existing = users_table.get_item(Key={"username": username})
+
+        if "Item" in existing:
+            return render_template("register.html", error="User already exists")
+
+        users_table.put_item(
+            Item={
+                "username": username,
+                "password": password,
+                "role": "user"
+            }
+        )
+
+        return redirect(url_for("login"))
+
+    return render_template("register.html")
+
+
+# =========================
+# Login
+# =========================
+@app.route("/login", methods=["GET", "POST"])
+def login():
+
+    if request.method == "POST":
+
+        username = request.form.get("username")
+        password = request.form.get("password")
+
+        response = users_table.get_item(Key={"username": username})
+        user = response.get("Item")
+
+        if user and user["password"] == password:
+
             session["user"] = username
+            session["role"] = user["role"]
+
             return redirect(url_for("index"))
-        else:
-            return render_template("login.html", error="Invalid credentials")
+
+        return render_template("login.html", error="Invalid credentials")
 
     return render_template("login.html")
 
-# 🔹 Main Sales Page
+
+# =========================
+# Main Sales Page
+# =========================
 @app.route("/index")
 def index():
+
     if "user" not in session:
         return redirect(url_for("login"))
+
     return render_template("index.html")
 
-# 🔹 Purchase Route (CSRF Protected Automatically)
+
+# =========================
+# Purchase
+# =========================
 @app.route("/purchase", methods=["POST"])
 def purchase():
+
     if "user" not in session:
         return redirect(url_for("login"))
 
     product = request.form.get("product")
     amount = int(request.form.get("amount"))
 
-    sales_data.append({
-        "product": product,
-        "amount": amount
-    })
+    sales_table.put_item(
+        Item={
+            "sale_id": f"{session['user']}-{product}-{amount}",
+            "username": session["user"],
+            "product": product,
+            "amount": amount
+        }
+    )
 
     return render_template(
         "index.html",
@@ -69,27 +125,66 @@ def purchase():
         amount=amount
     )
 
-# 🔹 Dashboard
+
+# =========================
+# Dashboard
+# =========================
 @app.route("/dashboard")
 def dashboard():
+
     if "user" not in session:
         return redirect(url_for("login"))
 
-    total_sales = len(sales_data)
-    total_amount = sum(s["amount"] for s in sales_data)
+    role = session.get("role")
+
+    if role == "admin":
+        response = sales_table.scan()
+    else:
+        response = sales_table.scan(
+            FilterExpression=boto3.dynamodb.conditions.Attr("username").eq(session["user"])
+        )
+
+    sales = response.get("Items", [])
+
+    total_sales = len(sales)
+    total_amount = sum(int(s["amount"]) for s in sales)
 
     return render_template(
         "dashboard.html",
         total_sales=total_sales,
         total_amount=total_amount,
-        sales=sales_data
+        sales=sales
     )
 
-# 🔹 Logout
+
+# =========================
+# Admin delete user
+# =========================
+@app.route("/admin/delete_user/<username>", methods=["POST"])
+def delete_user(username):
+
+    if session.get("role") != "admin":
+        return "Not authorized", 403
+
+    users_table.delete_item(
+        Key={"username": username}
+    )
+
+    return redirect(url_for("dashboard"))
+
+
+# =========================
+# Logout
+# =========================
 @app.route("/logout", methods=["POST"])
 def logout():
+
     session.clear()
     return redirect(url_for("login"))
 
+
+# =========================
+# Run Flask
+# =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
