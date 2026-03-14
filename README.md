@@ -26,5 +26,5 @@ User → ALB → ECS Service → Fargate Task → Flask App
 3. Image pushed to Amazon ECR
 4. ECS service redeployed automatically
 
-## Public URL
-http://https://>
+## Public URL DNS
+http://https://
