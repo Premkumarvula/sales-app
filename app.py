@@ -1,24 +1,32 @@
 from flask import Flask, render_template, request, redirect, url_for, session
 from flask_wtf import CSRFProtect
 import boto3
+from boto3.dynamodb.conditions import Attr
 import os
+import uuid
 
+sale_id = str(uuid.uuid4())
 app = Flask(__name__)
 
+# =========================
 # Secret key
+# =========================
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
+
 if not app.secret_key:
     raise RuntimeError("FLASK_SECRET_KEY not set")
 
 csrf = CSRFProtect(app)
 
+# =========================
 # DynamoDB connection
+# =========================
 dynamodb = boto3.resource(
     "dynamodb",
-    region_name=os.getenv("AWS_REGION", "ap-southeast-1")
+    region_name=os.getenv("AWS_DEFAULT_REGION", "ap-southeast-1")
 )
 
-users_table = dynamodb.Table("UsersTable")
+users_table = dynamodb.Table("Users")
 sales_table = dynamodb.Table("SalesTable")
 
 
@@ -27,7 +35,7 @@ sales_table = dynamodb.Table("SalesTable")
 # =========================
 @app.route("/")
 def health():
-    return "RO Sales App is running", 200
+    return "RO Sales App is running - Version 2", 200
 
 
 # =========================
@@ -77,7 +85,7 @@ def login():
         if user and user["password"] == password:
 
             session["user"] = username
-            session["role"] = user["role"]
+            session["role"] = user.get("role", "user")
 
             return redirect(url_for("index"))
 
@@ -112,7 +120,7 @@ def purchase():
 
     sales_table.put_item(
         Item={
-            "sale_id": f"{session['user']}-{product}-{amount}",
+            "sale_id": sale_id,
             "username": session["user"],
             "product": product,
             "amount": amount
@@ -141,7 +149,7 @@ def dashboard():
         response = sales_table.scan()
     else:
         response = sales_table.scan(
-            FilterExpression=boto3.dynamodb.conditions.Attr("username").eq(session["user"])
+            FilterExpression=Attr("username").eq(session["user"])
         )
 
     sales = response.get("Items", [])
