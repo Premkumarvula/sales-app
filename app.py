@@ -4,13 +4,26 @@ import boto3
 from boto3.dynamodb.conditions import Attr
 import os
 import uuid
+import logging
 from prometheus_flask_exporter import PrometheusMetrics
 
 
-sale_id = str(uuid.uuid4())
+# =========================
+# Flask App
+# =========================
 app = Flask(__name__)
 
-metrics = PrometheusMetrics(app)
+# =========================
+# Prometheus Metrics
+# =========================
+metrics = PrometheusMetrics(app, group_by='endpoint')
+
+# =========================
+# Logging
+# =========================
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # =========================
 # Secret key
 # =========================
@@ -36,9 +49,9 @@ sales_table = dynamodb.Table("SalesTable")
 # =========================
 # Health check (ALB)
 # =========================
-@app.route("/")
+@app.route("/health")
 def health():
-    return "RO Sales App is running - Version 2", 200
+    return "OK", 200
 
 
 # =========================
@@ -52,7 +65,6 @@ def register():
         username = request.form.get("username")
         password = request.form.get("password")
 
-        # check if user already exists
         existing = users_table.get_item(Key={"username": username})
 
         if "Item" in existing:
@@ -65,6 +77,8 @@ def register():
                 "role": "user"
             }
         )
+
+        logger.info(f"User registered: {username}")
 
         return redirect(url_for("login"))
 
@@ -90,6 +104,8 @@ def login():
             session["user"] = username
             session["role"] = user.get("role", "user")
 
+            logger.info(f"User logged in: {username}")
+
             return redirect(url_for("index"))
 
         return render_template("login.html", error="Invalid credentials")
@@ -100,6 +116,7 @@ def login():
 # =========================
 # Main Sales Page
 # =========================
+@app.route("/")
 @app.route("/index")
 def index():
 
@@ -121,6 +138,8 @@ def purchase():
     product = request.form.get("product")
     amount = int(request.form.get("amount"))
 
+    sale_id = str(uuid.uuid4())
+
     sales_table.put_item(
         Item={
             "sale_id": sale_id,
@@ -129,6 +148,8 @@ def purchase():
             "amount": amount
         }
     )
+
+    logger.info(f"Sale created: {sale_id}")
 
     return render_template(
         "index.html",
@@ -177,9 +198,9 @@ def delete_user(username):
     if session.get("role") != "admin":
         return "Not authorized", 403
 
-    users_table.delete_item(
-        Key={"username": username}
-    )
+    users_table.delete_item(Key={"username": username})
+
+    logger.info(f"User deleted: {username}")
 
     return redirect(url_for("dashboard"))
 
@@ -191,6 +212,7 @@ def delete_user(username):
 def logout():
 
     session.clear()
+
     return redirect(url_for("login"))
 
 
@@ -198,4 +220,4 @@ def logout():
 # Run Flask
 # =========================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5001)
