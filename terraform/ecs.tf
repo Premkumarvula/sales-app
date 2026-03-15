@@ -2,6 +2,7 @@ resource "aws_ecs_cluster" "sales_cluster" {
   name = "sales-app-cluster"
 }
 
+# Task Role - allows app to call DynamoDB
 resource "aws_iam_role" "ecs_task_role" {
   name = "ecs-dynamodb-role"
 
@@ -20,4 +21,9 @@ resource "aws_iam_role" "ecs_task_role" {
 resource "aws_iam_role_policy_attachment" "dynamodb_access" {
   role       = aws_iam_role.ecs_task_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
+}
+
+# Reference your existing execution role
+data "aws_iam_role" "ecs_execution_role" {
+  name = "sales-app-ecs-execution-role"
 }
