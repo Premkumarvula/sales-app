@@ -1,3 +1,4 @@
 Flask==2.3.2
 Flask-WTF
 boto3
+prometheus_flask_exporter
