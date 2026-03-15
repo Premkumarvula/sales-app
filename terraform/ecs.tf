@@ -4,7 +4,7 @@ resource "aws_ecs_cluster" "sales_cluster" {
 
 # Task Role - allows app to call DynamoDB
 resource "aws_iam_role" "ecs_task_role" {
-  name = "ecs-dynamodb-role"
+  name = "ecs-dynamodb-role1"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

@@ -136,7 +136,7 @@ def purchase():
         return redirect(url_for("login"))
 
     product = request.form.get("product")
-    amount = int(request.form.get("amount"))
+    amount = int(request.form.get("amount", 0))
 
     sale_id = str(uuid.uuid4())
 
