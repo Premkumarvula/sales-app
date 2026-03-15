@@ -4,10 +4,13 @@ import boto3
 from boto3.dynamodb.conditions import Attr
 import os
 import uuid
+from prometheus_flask_exporter import PrometheusMetrics
+
 
 sale_id = str(uuid.uuid4())
 app = Flask(__name__)
 
+metrics = PrometheusMetrics(app)
 # =========================
 # Secret key
 # =========================
