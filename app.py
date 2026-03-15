@@ -51,7 +51,7 @@ sales_table = dynamodb.Table("SalesTable")
 # =========================
 @app.route("/health")
 def health():
-    return "OK", 200
+    return {'status': 'healthy'}, 200
 
 
 # =========================

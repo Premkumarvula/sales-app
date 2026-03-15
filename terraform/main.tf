@@ -75,7 +75,14 @@ resource "aws_lb_target_group" "this" {
   target_type = "ip"
 
   health_check {
-    path = "/"
+    path                = "/health"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
   }
 
   lifecycle {
